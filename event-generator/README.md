@@ -28,6 +28,24 @@ The generator simulates realistic customer activity and produces structured even
   event-generation logic. The tests help ensure that changes to the
   generator do not break existing functionality.
 
+- **Configurable event generation rate** — The generator can control the
+  approximate number of events produced per second using
+  `--events-per-second`.
+
+- **Duration-based generation** — Events can be generated for a specified
+  duration using `--duration`, allowing the generator to simulate a
+  continuous streaming workload.
+
+- **CLI validation** — The generator validates event counts, generation
+  rates, and duration values before starting.
+
+- **Accurate event scheduling** — `time.monotonic()` is used to schedule
+  events against a target timeline rather than simply sleeping after each
+  event.
+
+- **CLI automated tests** — Pytest tests validate command-line arguments,
+  event-count generation, duration mode, and invalid input handling.
+
 ### Event Generation
 
 The generator produces six event types:
@@ -124,3 +142,24 @@ Exit the Python interpreter when finished:
 ```powershell
 exit
 ```
+
+### Test a fixed number of events
+
+Generate 10 events at approximately 5 events per second:
+
+```powershell
+$env:PYTHONPATH="src"
+python -m shopstream.main --events 10 --events-per-second 5
+```
+
+
+### Test duration-based generation
+Generate events at approximately 5 events per second for 10 seconds:
+
+```powershell
+$env:PYTHONPATH="src"
+python -m shopstream.main --duration 10 --events-per-second 5
+```
+
+
+
