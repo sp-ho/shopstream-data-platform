@@ -46,6 +46,24 @@ The generator simulates realistic customer activity and produces structured even
 - **CLI automated tests** — Pytest tests validate command-line arguments,
   event-count generation, duration mode, and invalid input handling.
 
+- **Duplicate event simulation** — Intentionally produces duplicate messages while preserving the original event_id, simulating at-least-once delivery or producer retries.
+
+- **Configurable duplicate rate** — Controls the probability of generating duplicate events using --duplicate-rate.
+
+- **Invalid event simulation** — Introduces controlled data-quality problems into otherwise valid events.
+
+- **Business-rule violations** — Can generate orders with negative total_amount values.
+
+- **Required-field violations** — Can generate events with an empty customer_id.
+
+- **Configurable invalid-event rate** — Controls the probability of generating invalid events using --invalid-rate.
+
+- **Anomaly simulation layer** — Separates normal event generation from intentional data-quality problems.
+
+- **Automated anomaly tests** — Tests duplicate behavior, invalid events, anomaly configuration, and CLI validation.
+
+- **Combined anomaly simulation** — Duplicate and invalid-event rates can be enabled independently or together.
+
 ### Event Generation
 
 The generator produces six event types:
@@ -152,7 +170,6 @@ $env:PYTHONPATH="src"
 python -m shopstream.main --events 10 --events-per-second 5
 ```
 
-
 ### Test duration-based generation
 Generate events at approximately 5 events per second for 10 seconds:
 
@@ -161,5 +178,11 @@ $env:PYTHONPATH="src"
 python -m shopstream.main --duration 10 --events-per-second 5
 ```
 
+### Test anomalies generation
+Simulates a stream where approximately 5% of generated events may be duplicated and approximately 2% may contain intentional data-quality problems:
 
+```powershell
+$env:PYTHONPATH="src"
+python -m shopstream.main ` --events 100 ` --events-per-second 10 ` --duplicate-rate 0.05 ` --invalid-rate 0.02
+```
 

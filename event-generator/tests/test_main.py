@@ -96,3 +96,40 @@ def test_main_generates_events_for_duration(capsys, monkeypatch):
     lines = captured.out.strip().splitlines()
 
     assert len(lines) > 0
+
+def test_main_rejects_invalid_invalid_rate(monkeypatch):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "shopstream",
+            "--events",
+            "10",
+            "--invalid-rate",
+            "1.5",
+        ],
+    )
+
+    with pytest.raises(SystemExit):
+        main()
+
+def test_main_accepts_invalid_rate(monkeypatch, capsys):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "shopstream",
+            "--events",
+            "3",
+            "--events-per-second",
+            "1000",
+            "--invalid-rate",
+            "0.5",
+        ],
+    )
+
+    main()
+
+    captured = capsys.readouterr()
+
+    lines = captured.out.strip().splitlines()
+
+    assert len(lines) >= 3
