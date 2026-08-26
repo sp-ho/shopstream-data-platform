@@ -125,7 +125,7 @@ The generator currently produces six event types:
 - order_cancelled
 
 A simplified event structure is:
-
+```
 ShopStreamEvent
 │
 ├── event_id
@@ -145,27 +145,28 @@ ShopStreamEvent
     ├── order_id
     ├── currency
     └── total_amount
+```
 
 Not every event contains every entity.
 
 For example:
-
+```
 product_viewed
     ├── customer
     └── product
-
+```
 while:
-
+```
 payment_completed
     ├── customer
     └── order
-
+```
 ### Customer Journey Simulation
 
 The generator can simulate a realistic customer journey instead of producing completely independent events.
 
 A typical journey can follow:
-
+```
 product_viewed
        │
        ▼
@@ -177,7 +178,7 @@ order_created
        ├──────────────┐
        ▼              ▼
 payment_completed   order_cancelled
-
+```
 Not every customer completes every step.
 
 For example:
@@ -466,7 +467,7 @@ exit()
 ```
 
 ## Project Structure
-
+```
 event-generator/
 │
 ├── src/
@@ -486,7 +487,7 @@ event-generator/
 │
 ├── requirements.txt
 └── README.md
-
+```
 ## Architecture
 
 The current architecture separates normal event generation from anomaly simulation:
