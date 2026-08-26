@@ -2,7 +2,7 @@
 
 A configurable synthetic e-commerce event generator for the **ShopStream Data Platform** project.
 
-The generator simulates realistic customer activity and produces structured events that will eventually be streamed through Google Cloud Pub/Sub, processed with Dataflow, and stored in BigQuery.
+The generator simulates realistic customer activity and produces structured events that can be streamed through Google Cloud Pub/Sub, processed with Dataflow, and stored in BigQuery.
 
 The goal of this component is not simply to generate random data. It is designed to simulate the kinds of conditions that a real streaming data platform needs to handle:
 
@@ -91,7 +91,7 @@ Python's `random` module introduces controlled variability into:
 
 ### argparse
 
-`argpars`e provides the command-line interface used to configure the generator without modifying the source code.
+`argparse` provides the command-line interface used to configure the generator without modifying the source code.
 
 ### time
 
@@ -112,6 +112,18 @@ Pytest provides automated testing for:
 - invalid events
 - late events
 - out-of-order events
+
+### Google Cloud Pub/Sub
+
+Google Cloud Pub/Sub provides the messaging layer between the ShopStream event generator and the future stream-processing pipeline.
+
+The Python Pub/Sub client is used to:
+
+- publish serialized ShopStream events
+- attach event metadata as message attributes
+- receive Pub/Sub message IDs
+- handle publishing errors
+- gracefully close the publisher client
 
 ## Event Model
 
@@ -200,7 +212,7 @@ The generator contains a separate anomaly simulation layer.
 
 This allows normal event generation to remain separate from intentionally generated data-quality and streaming anomalies.
 
-## Duplicate Events
+#### Duplicate Events
 
 Duplicate events preserve the original event_id.
 
@@ -221,11 +233,10 @@ Configure the probability with: `--duplicate-rate`
 
 Example:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --events 100 --duplicate-rate 0.05
 ```
 
-### Invalid Events
+#### Invalid Events
 
 The generator can intentionally produce invalid data.
 
@@ -238,13 +249,12 @@ Configure the probability with: `--invalid-rate`
 
 Example:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --events 100 --invalid-rate 0.02
 ```
 
 These events will be useful later when implementing data-quality validation and dead-letter handling in the streaming pipeline.
 
-### Late Events
+#### Late Events
 
 A late event has an `event_timestamp` that is earlier than its `ingestion_timestamp`.
 
@@ -256,13 +266,12 @@ and the amount of delay with: `--late-delay-seconds`
 
 Example:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --events 100 --late-rate 0.10 --late-delay-seconds 60
 ```
 
 This simulates approximately 10% of events arriving 60 seconds after their event time.
 
-### Out-of-Order Events
+#### Out-of-Order Events
 
 Events within a customer journey can be deliberately reordered.
 
@@ -288,11 +297,110 @@ Configure the probability with: `--out-of-order-rate`
 
 Example:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --journeys 20 --out-of-order-rate 1.0
 ```
 
 Note that journeys containing too few events may not be reordered.
+
+## Pub/Sub Integration
+
+The event generator can publish generated events directly to Google Cloud Pub/Sub.
+
+The Pub/Sub publishing layer is implemented in `publisher.py`.
+
+The publisher:
+
+- serializes `ShopStreamEvent` objects as compact JSON
+- publishes events to a configured Pub/Sub topic
+- attaches event metadata as Pub/Sub message attributes
+- returns the Pub/Sub message ID
+- logs successful publications
+- logs publishing failures and re-raises the exception
+- closes the Pub/Sub publisher client when the application exits
+
+Each published message contains the complete ShopStream event as JSON.
+
+The following Pub/Sub attributes are also attached:
+
+- `event_type`
+- `event_version`
+- `source`
+
+This allows downstream consumers to inspect basic event metadata without parsing the complete JSON payload.
+
+### Pub/Sub Configuration
+
+The Pub/Sub project and topic can be configured using command-line arguments or environment variables.
+
+Command-line arguments:
+
+- `--project-id`
+- `--topic-id`
+
+Environment variables:
+
+- `SHOPSTREAM_PROJECT_ID`
+- `SHOPSTREAM_TOPIC_ID`
+
+This allows the same application to be used across different environments without modifying the source code.
+
+### Publish events to Pub/Sub
+
+Generate 10 events and publish them to the `shopstream-events` topic:
+
+```powershell
+python -m shopstream.main `
+    --events 10 `
+    --events-per-second 5 `
+    --publish `
+    --project-id shopstream-data-platform `
+    --topic-id shopstream-events
+```
+
+### Verify published messages
+
+Messages can be retrieved from the Pub/Sub subscription using the Google Cloud CLI:
+
+```powershell
+gcloud pubsub subscriptions pull shopstream-events-sub --limit=3 --auto-ack
+```
+
+The output should contain:
+```powershell
+DATA: {...}
+MESSAGE_ID: ...
+ATTRIBUTES: event_type=...
+event_version=...
+source=...
+ACK_STATUS: SUCCESS
+```
+
+The --limit option controls how many messages are pulled. For example, --limit=3 requests up to three messages.
+The --auto-ack option acknowledges the messages after they are successfully pulled.
+
+### Publish events with anomalies
+
+Generate 100 events and publish them to Pub/Sub while intentionally introducing duplicate, invalid, and late events:
+
+```powershell
+python -m shopstream.main `
+    --events 100 `
+    --events-per-second 10 `
+    --publish `
+    --project-id shopstream-data-platform `
+    --topic-id shopstream-events `
+    --duplicate-rate 0.05 `
+    --invalid-rate 0.02 `
+    --late-rate 0.10 `
+    --late-delay-seconds 60
+```
+
+These anomalies are intentionally generated so that the downstream streaming pipeline can later demonstrate:
+
+- duplicate detection
+- data-quality validation
+- late-event handling
+- event-time processing
 
 ## Command-Line Usage
 
@@ -300,7 +408,6 @@ Note that journeys containing too few events may not be reordered.
 
 Generate 10 events at approximately 5 events per second:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --events 10 --events-per-second 5
 ```
 
@@ -308,7 +415,6 @@ python -m shopstream.main --events 10 --events-per-second 5
 
 Generate events at approximately 5 events per second for 10 seconds:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --duration 10 --events-per-second 5
 ```
 
@@ -316,7 +422,6 @@ python -m shopstream.main --duration 10 --events-per-second 5
 
 Generate 10 customer journeys:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --journeys 10
 ```
 Each journey may contain a different number of events because customer behavior is randomized.
@@ -329,7 +434,6 @@ Generate 100 events with:
 - 2% invalid-event probability
 
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --events 100 --duplicate-rate 0.05 --invalid-rate 0.02
 ```
 
@@ -337,7 +441,6 @@ python -m shopstream.main --events 100 --duplicate-rate 0.05 --invalid-rate 0.02
 
 Generate 100 events with approximately 10% late events and a 60-second delay:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --events 100 --late-rate 0.10 --late-delay-seconds 60
 ```
 
@@ -345,7 +448,6 @@ python -m shopstream.main --events 100 --late-rate 0.10 --late-delay-seconds 60
 
 Generate 20 customer journeys and enable out-of-order simulation:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main --journeys 20 --out-of-order-rate 1.0
 ```
 
@@ -355,7 +457,6 @@ Multiple anomaly types can be enabled simultaneously.
 
 For example:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main `
     --events 100 `
     --events-per-second 10 `
@@ -367,7 +468,6 @@ python -m shopstream.main `
 
 Journey-level out-of-order simulation can be combined with journey generation:
 ```powershell
-$env:PYTHONPATH="src"
 python -m shopstream.main `
     --journeys 20 `
     --out-of-order-rate 0.5
@@ -395,6 +495,13 @@ The current test suite covers:
 - late-event simulation
 - out-of-order simulation
 - anomaly configuration
+- Pub/Sub publisher initialization
+- Pub/Sub topic configuration
+- event serialization for Pub/Sub
+- Pub/Sub message attributes
+- publisher lifecycle and cleanup
+- Pub/Sub publishing failure handling
+- publisher logging
 
 ## Interactive Generator Testing
 
@@ -405,7 +512,6 @@ The generators can also be tested directly from Python.
 From the `event-generator` directory:
 
 ```powershell
-$env:PYTHONPATH="src"
 python
 ```
 
@@ -438,7 +544,6 @@ exit()
 From the event-generator directory:
 
 ```powershell
-$env:PYTHONPATH="src"
 python
 ```
 
@@ -476,6 +581,7 @@ event-generator/
 │       ├── models.py
 │       ├── generator.py
 │       ├── anomalies.py
+│       ├── publisher.py
 │       └── main.py
 │
 ├── tests/
@@ -483,7 +589,8 @@ event-generator/
 │   ├── test_models.py
 │   ├── test_generator.py
 │   ├── test_main.py
-│   └── test_anomalies.py
+│   ├── test_anomalies.py
+│   └── test_publisher.py
 │
 ├── requirements.txt
 └── README.md
@@ -491,34 +598,63 @@ event-generator/
 ## Architecture
 
 The current architecture separates normal event generation from anomaly simulation:
+```
+                    ┌──────────────────────┐
+                    │   Event Generator    │
+                    └──────────┬───────────┘
+                               │
+                  ┌────────────┴────────────┐
+                  │                         │
+           generate_event()          generate_journey()
+                  │                         │
+                  ▼                         ▼
+           Individual Event          Event Sequence
+                  │                         │
+                  └────────────┬────────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │  Anomaly Simulator    │
+                    └──────────┬───────────┘
+                               │
+             ┌─────────────────┼─────────────────┐
+             │                 │                 │
+          Duplicate         Invalid            Late
+             │                 │                 │
+             └─────────────────┼─────────────────┘
+                               │
+                         Out-of-order
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │   Pub/Sub Publisher  │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                    ┌──────────────────────┐
+                    │   Google Pub/Sub     │
+                    │  shopstream-events   │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+                       Future: Dataflow
+                               │
+                               ▼
+                       Future: BigQuery
+```
+The architecture intentionally separates business-event generation, anomaly simulation, and message publishing.
 
-                 ┌──────────────────┐
-                 │  Event Generator │
-                 └────────┬─────────┘
-                          │
-              ┌───────────┴───────────┐
-              │                       │
-       generate_event()        generate_journey()
-              │                       │
-              ▼                       ▼
-       Individual Event         Event Sequence
-              │                       │
-              └───────────┬───────────┘
-                          ▼
-                Anomaly Simulator
-                          │
-        ┌─────────────────┼─────────────────┐
-        │                 │                 │
-     Duplicate          Invalid           Late
-        │                 │                 │
-        └─────────────────┼─────────────────┘
-                          │
-                    Out-of-order
-                          │
-                          ▼
-                  JSON Event Stream
-                          │
-                          ▼
-                    Future: Pub/Sub
+The generator creates realistic business events, the anomaly simulator introduces controlled streaming and data-quality problems, and the Pub/Sub publisher transports the resulting events into Google Cloud Pub/Sub.
 
-This separation is intentional: the generator creates realistic business events, while the anomaly layer creates controlled conditions that a production streaming pipeline must handle.
+Dataflow and BigQuery are the next stages of the ShopStream Data Platform.
+
+## Installation
+
+From the `event-generator` directory:
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+pip install -e .
+```
