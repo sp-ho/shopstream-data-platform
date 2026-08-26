@@ -4,6 +4,7 @@ import time
 
 from .generator import generate_event, generate_journey
 from .anomalies import AnomalyConfig, AnomalySimulator
+from .publisher import PubSubPublisher
 
 def wait_until(target_time: float) -> None:
     """
@@ -13,6 +14,25 @@ def wait_until(target_time: float) -> None:
 
     if remaining > 0:
         time.sleep(remaining)
+
+def output_event(
+    event,
+    publisher: PubSubPublisher | None = None,
+) -> None:
+    """
+    Output an event locally and optionally publish it to Pub/Sub.
+    """
+
+    print(
+        json.dumps(
+            event.model_dump(mode="json"),
+            separators=(",", ":"),
+        )
+    )
+
+    if publisher is not None:
+        message_id = publisher.publish(event)
+        print(f"Published to Pub/Sub: {message_id}")
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -80,6 +100,23 @@ def main() -> None:
         help="Probability of reordering events within a journey.",
     )
 
+    parser.add_argument(
+        "--publish",
+        action="store_true",
+        help="Publish generated events to Google Cloud Pub/Sub.",
+    )
+
+    parser.add_argument(
+        "--project-id",
+        help="Google Cloud project ID used for Pub/Sub publishing.",
+    )
+
+    parser.add_argument(
+        "--topic-id",
+        default="shopstream-events",
+        help="Pub/Sub topic ID.",
+    )
+
     args = parser.parse_args()
 
     # -----------------------------------------------------------------------
@@ -128,12 +165,27 @@ def main() -> None:
     if not 0.0 <= args.out_of_order_rate <= 1.0:
         parser.error("--out-of-order-rate must be between 0.0 and 1.0.")
 
+    if args.publish and not args.project_id:
+        parser.error("--project-id is required when using --publish.")
+
+    # -----------------------------------------------------------------------
+    # Pub/Sub publisher
+    # -----------------------------------------------------------------------
+
+    publisher = None
+
+    if args.publish:
+        publisher = PubSubPublisher(
+            project_id=args.project_id,
+            topic_id=args.topic_id,
+        )
+
     # -----------------------------------------------------------------------
     # Anomaly simulator
     # -----------------------------------------------------------------------
 
     anomaly_simulator = AnomalySimulator(
-    AnomalyConfig(
+        AnomalyConfig(
             duplicate_rate=args.duplicate_rate,
             invalid_rate=args.invalid_rate,
             late_rate=args.late_rate,
@@ -153,13 +205,7 @@ def main() -> None:
             journey = anomaly_simulator.process_events(journey)
 
             for event in journey:
-                print(
-                    json.dumps(
-                        event.model_dump(mode="json"),
-                        separators=(",", ":"),
-                    )
-                )
-        return
+                output_event(event, publisher)
 
     # -----------------------------------------------------------------------
     # Individual event mode
@@ -175,17 +221,15 @@ def main() -> None:
 
             event = generate_event()
 
-            for output_event in anomaly_simulator.process(event):
-                print(
-                    json.dumps(
-                        output_event.model_dump(mode="json"),
-                        separators=(",", ":"),
-                    )
+            for output_event_result in anomaly_simulator.process(event):
+                output_event(
+                    output_event_result,
+                    publisher,
                 )
 
             next_event_time += interval
 
-    else:
+    elif args.duration is not None:
         start_time = time.monotonic()
         end_time = start_time + args.duration
         next_event_time = start_time
@@ -195,12 +239,10 @@ def main() -> None:
 
             event = generate_event()
 
-            for output_event in anomaly_simulator.process(event):
-                print(
-                    json.dumps(
-                        output_event.model_dump(mode="json"),
-                        separators=(",", ":"),
-                    )
+            for output_event_result in anomaly_simulator.process(event):
+                output_event(
+                    output_event_result,
+                    publisher,
                 )
 
             next_event_time += interval 

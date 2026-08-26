@@ -1,6 +1,6 @@
 # CLI test
 import pytest
-
+from unittest.mock import MagicMock, patch
 from src.shopstream.main import main
 
 def test_main_generates_requested_number_of_events(capsys, monkeypatch):
@@ -228,3 +228,88 @@ def test_main_accepts_out_of_order_rate(
     captured = capsys.readouterr()
 
     assert captured.out.strip()
+
+@patch("src.shopstream.main.PubSubPublisher")
+@patch("src.shopstream.main.generate_event")
+def test_main_publish_sends_events_to_pubsub(
+    mock_generate_event,
+    mock_publisher_class,
+    monkeypatch,
+):
+    event = MagicMock()
+    event.model_dump.return_value = {
+        "event_id": "test-event",
+        "event_type": "product_viewed",
+    }
+    event.event_type = "product_viewed"
+
+    mock_generate_event.return_value = event
+
+    publisher = mock_publisher_class.return_value
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "main.py",
+            "--events",
+            "3",
+            "--publish",
+            "--project-id",
+            "shopstream-data-platform",
+            "--topic-id",
+            "shopstream-events",
+        ],
+    )
+
+    from src.shopstream.main import main
+
+    main()
+
+    mock_publisher_class.assert_called_once_with(
+        project_id="shopstream-data-platform",
+        topic_id="shopstream-events",
+    )
+
+    assert publisher.publish.call_count == 3
+
+@patch("src.shopstream.main.PubSubPublisher")
+def test_main_publish_requires_project_id(
+    mock_publisher_class,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "main.py",
+            "--events",
+            "1",
+            "--publish",
+        ],
+    )
+
+    from src.shopstream.main import main
+
+    with pytest.raises(SystemExit):
+        main()
+
+    mock_publisher_class.assert_not_called()
+
+@patch("src.shopstream.main.PubSubPublisher")
+def test_main_without_publish_does_not_create_publisher(
+    mock_publisher_class,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "main.py",
+            "--events",
+            "2",
+        ],
+    )
+
+    from src.shopstream.main import main
+
+    main()
+
+    mock_publisher_class.assert_not_called()
