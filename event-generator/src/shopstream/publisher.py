@@ -3,8 +3,11 @@
 # It receives a ShopStreamEvent from generate_event() or generate_journey(), and publishes it to a Google Cloud Pub/Sub topic.
 
 import json
+import logging
 from google.cloud import pubsub_v1
 from .models import ShopStreamEvent
+
+logger = logging.getLogger(__name__)
 
 class PubSubPublisher:
     """
@@ -28,6 +31,9 @@ class PubSubPublisher:
 
         Returns:
             The Pub/Sub message ID.
+
+        Raises:
+            Exception: Re-raises any exception from Pub/Sub publishing.
         """
 
         event_json = json.dumps(
@@ -37,12 +43,38 @@ class PubSubPublisher:
 
         data = event_json.encode("utf-8")
 
-        future = self.publisher.publish(
-            self.topic_path,
-            data,
-            event_type=event.event_type,
-            event_version=str(event.event_version),
-            source=event.source,
-        )
+        try:
+            future = self.publisher.publish(
+                self.topic_path,
+                data,
+                event_type=event.event_type,
+                event_version=str(event.event_version),
+                source=event.source,
+            )
 
-        return future.result()
+            message_id = future.result()
+
+            logger.info(
+                "Published event to Pub/Sub: event_id=%s event_type=%s "
+                "message_id=%s",
+                event.event_id,
+                event.event_type,
+                message_id,
+            )
+
+            return message_id
+
+        except Exception:
+            logger.exception(
+                "Failed to publish event to Pub/Sub: "
+                "event_id=%s event_type=%s",
+                event.event_id,
+                event.event_type,
+            )
+            raise
+
+    def close(self) -> None:
+        """
+        Close the Pub/Sub publisher client and release resources.
+        """
+        self.publisher.stop()

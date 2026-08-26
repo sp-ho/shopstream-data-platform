@@ -313,3 +313,99 @@ def test_main_without_publish_does_not_create_publisher(
     main()
 
     mock_publisher_class.assert_not_called()
+
+@patch("src.shopstream.main.PubSubPublisher")
+def test_project_id_can_come_from_environment(
+    mock_publisher_class,
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "SHOPSTREAM_PROJECT_ID",
+        "env-project",
+    )
+
+    monkeypatch.delenv(
+        "SHOPSTREAM_TOPIC_ID",
+        raising=False,
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "main.py",
+            "--events",
+            "1",
+            "--publish",
+        ],
+    )
+
+    from src.shopstream.main import main
+
+    main()
+
+    mock_publisher_class.assert_called_once_with(
+        project_id="env-project",
+        topic_id="shopstream-events",
+    )
+
+@patch("src.shopstream.main.PubSubPublisher")
+def test_topic_id_can_come_from_environment(
+    mock_publisher_class,
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "SHOPSTREAM_PROJECT_ID",
+        "env-project",
+    )
+
+    monkeypatch.setenv(
+        "SHOPSTREAM_TOPIC_ID",
+        "env-topic",
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "main.py",
+            "--events",
+            "1",
+            "--publish",
+        ],
+    )
+
+    from src.shopstream.main import main
+
+    main()
+
+    mock_publisher_class.assert_called_once_with(
+        project_id="env-project",
+        topic_id="env-topic",
+    )
+
+@patch("src.shopstream.main.PubSubPublisher")
+def test_main_closes_publisher(
+    mock_publisher_class,
+    monkeypatch,
+):
+    monkeypatch.setenv(
+        "SHOPSTREAM_PROJECT_ID",
+        "test-project",
+    )
+
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "main.py",
+            "--events",
+            "1",
+            "--publish",
+        ],
+    )
+
+    from src.shopstream.main import main
+
+    main()
+
+    publisher = mock_publisher_class.return_value
+
+    publisher.close.assert_called_once()

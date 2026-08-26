@@ -1,6 +1,7 @@
 import argparse
 import json
 import time
+import os
 
 from .generator import generate_event, generate_journey
 from .anomalies import AnomalyConfig, AnomalySimulator
@@ -108,12 +109,13 @@ def main() -> None:
 
     parser.add_argument(
         "--project-id",
+        default=os.getenv("SHOPSTREAM_PROJECT_ID"),
         help="Google Cloud project ID used for Pub/Sub publishing.",
     )
 
     parser.add_argument(
         "--topic-id",
-        default="shopstream-events",
+        default=os.getenv("SHOPSTREAM_TOPIC_ID", "shopstream-events"),
         help="Pub/Sub topic ID.",
     )
 
@@ -195,57 +197,65 @@ def main() -> None:
     )
 
     # -----------------------------------------------------------------------
-    # Journey mode
+    # Event generation
     # -----------------------------------------------------------------------
 
-    if args.journeys > 0:
-        for _ in range(args.journeys):
-            journey = generate_journey()
+    try:
+        interval = 1.0 / args.events_per_second
 
-            journey = anomaly_simulator.process_events(journey)
+        if args.events is not None:
+            next_event_time = time.monotonic()
 
-            for event in journey:
-                output_event(event, publisher)
+            for _ in range(args.events):
+                wait_until(next_event_time)
 
-    # -----------------------------------------------------------------------
-    # Individual event mode
-    # -----------------------------------------------------------------------
+                event = generate_event()
 
-    interval = 1.0 / args.events_per_second
+                for output_event_result in anomaly_simulator.process(event):
+                    output_event(
+                        output_event_result,
+                        publisher,
+                    )
 
-    if args.events is not None:
-        next_event_time = time.monotonic()
+                next_event_time += interval
 
-        for _ in range(args.events):
-            wait_until(next_event_time)
+        elif args.duration is not None:
+            start_time = time.monotonic()
+            end_time = start_time + args.duration
+            next_event_time = start_time
 
-            event = generate_event()
+            while next_event_time < end_time:
+                wait_until(next_event_time)
 
-            for output_event_result in anomaly_simulator.process(event):
-                output_event(
-                    output_event_result,
-                    publisher,
-                )
+                event = generate_event()
 
-            next_event_time += interval
+                for output_event_result in anomaly_simulator.process(event):
+                    output_event(
+                        output_event_result,
+                        publisher,
+                    )
 
-    elif args.duration is not None:
-        start_time = time.monotonic()
-        end_time = start_time + args.duration
-        next_event_time = start_time
+                next_event_time += interval
 
-        while next_event_time < end_time:
-            wait_until(next_event_time)
+        # -------------------------------------------------------------------
+        # Customer journeys
+        # -------------------------------------------------------------------
 
-            event = generate_event()
+        if args.journeys > 0:
+            for _ in range(args.journeys):
+                journey = generate_journey()
 
-            for output_event_result in anomaly_simulator.process(event):
-                output_event(
-                    output_event_result,
-                    publisher,
-                )
+                journey = anomaly_simulator.process_events(journey)
 
-            next_event_time += interval 
+                for event in journey:
+                    output_event(
+                        event,
+                        publisher,
+                    )
+
+    finally:
+        if publisher is not None:
+            publisher.close()
 
 if __name__ == "__main__":
     main()
