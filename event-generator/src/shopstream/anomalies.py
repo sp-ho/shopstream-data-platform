@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 import random
 
-from .models import ShopStreamEvent
+from shopstream_common.models import ShopStreamEvent
 
 @dataclass(frozen=True)
 class AnomalyConfig:

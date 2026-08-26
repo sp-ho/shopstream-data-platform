@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
-from src.shopstream.models import Customer, Product, ShopStreamEvent
-from src.shopstream.publisher import PubSubPublisher
+from shopstream_common.models import Customer, Product, ShopStreamEvent
+from shopstream.publisher import PubSubPublisher
 
 def create_test_event() -> ShopStreamEvent:
     return ShopStreamEvent(

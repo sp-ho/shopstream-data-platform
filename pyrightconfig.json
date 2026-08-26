@@ -1,0 +1,7 @@
+{
+    "extraPaths": [
+        "./shared",
+        "./event-generator/src",
+        "./dataflow/src"
+    ]
+}

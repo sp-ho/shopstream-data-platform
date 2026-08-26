@@ -5,7 +5,7 @@
 import json
 import logging
 from google.cloud import pubsub_v1
-from .models import ShopStreamEvent
+from shopstream_common.models import ShopStreamEvent
 
 logger = logging.getLogger(__name__)
 

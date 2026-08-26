@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from src.shopstream.models import (
+from shopstream_common.models import (
     Customer,
     Order,
     ShopStreamEvent,

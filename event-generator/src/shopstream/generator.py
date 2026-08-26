@@ -3,7 +3,7 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from .models import (
+from shopstream_common.models import (
     Customer,
     Order,
     Product,

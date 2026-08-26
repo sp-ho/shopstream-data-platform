@@ -2,7 +2,7 @@ import pytest
 from datetime import timedelta
 import src.shopstream.anomalies as anomalies
 
-from src.shopstream.anomalies import (
+from shopstream.anomalies import (
     AnomalyConfig,
     AnomalySimulator,
     duplicate_event,
@@ -12,7 +12,7 @@ from src.shopstream.anomalies import (
     make_late_event,
     reorder_events
 )
-from src.shopstream.generator import (
+from shopstream.generator import (
     generate_event,
     generate_journey,
     generate_order_created_event,
