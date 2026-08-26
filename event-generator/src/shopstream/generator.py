@@ -68,11 +68,14 @@ def generate_customer_created_event() -> ShopStreamEvent:
     """
     Generate a customer_created event.
     """
+    now = datetime.now(timezone.utc)
+
     return ShopStreamEvent(
         event_id=str(uuid.uuid4()),
         event_type="customer_created",
         event_version=1,
-        event_timestamp=datetime.now(timezone.utc),
+        event_timestamp=now,
+        ingestion_timestamp=now,
         source=random.choice(SOURCES),
         customer=Customer(
             customer_id=random.choice(CUSTOMER_IDS)
@@ -89,11 +92,14 @@ def generate_product_viewed_event(context: EventContext | None = None) -> ShopSt
     if context is None:
         context = EventContext()
 
+    now = datetime.now(timezone.utc)
+
     return ShopStreamEvent(
         event_id=str(uuid.uuid4()),
         event_type="product_viewed",
         event_version=1,
-        event_timestamp=datetime.now(timezone.utc),
+        event_timestamp=now,
+        ingestion_timestamp=now,
         source=random.choice(SOURCES),
         customer=Customer(
             customer_id=context.customer_id
@@ -113,11 +119,14 @@ def generate_cart_added_event(context: EventContext | None = None) -> ShopStream
     if context is None:
         context = EventContext()
 
+    now = datetime.now(timezone.utc)
+
     return ShopStreamEvent(
         event_id=str(uuid.uuid4()),
         event_type="cart_added",
         event_version=1,
-        event_timestamp=datetime.now(timezone.utc),
+        event_timestamp=now,
+        ingestion_timestamp=now,
         source=random.choice(SOURCES),
         customer=Customer(
             customer_id=context.customer_id
@@ -139,6 +148,8 @@ def generate_order_created_event(context: EventContext | None = None) -> ShopStr
     if context is None:
         context = EventContext()
 
+    now = datetime.now(timezone.utc)
+
     order_id, total_amount = generate_order_details()
 
     context.order_id = order_id
@@ -148,7 +159,8 @@ def generate_order_created_event(context: EventContext | None = None) -> ShopStr
         event_id=str(uuid.uuid4()),
         event_type="order_created",
         event_version=1,
-        event_timestamp=datetime.now(timezone.utc),
+        event_timestamp=now,
+        ingestion_timestamp=now,
         source=random.choice(SOURCES),
         customer=Customer(
             customer_id=context.customer_id
@@ -177,11 +189,14 @@ def generate_payment_completed_event(context: EventContext) -> ShopStreamEvent:
             "Cannot generate payment_completed without an existing order."
         )
 
+    now = datetime.now(timezone.utc)
+
     return ShopStreamEvent(
         event_id=str(uuid.uuid4()),
         event_type="payment_completed",
         event_version=1,
-        event_timestamp=datetime.now(timezone.utc),
+        event_timestamp=now,
+        ingestion_timestamp=now,
         source=random.choice(SOURCES),
         customer=Customer(
             customer_id=context.customer_id
@@ -203,11 +218,14 @@ def generate_order_cancelled_event(context: EventContext) -> ShopStreamEvent:
             "Cannot generate order_cancelled without an existing order."
         )
 
+    now = datetime.now(timezone.utc)
+    
     return ShopStreamEvent(
         event_id=str(uuid.uuid4()),
         event_type="order_cancelled",
         event_version=1,
-        event_timestamp=datetime.now(timezone.utc),
+        event_timestamp=now,
+        ingestion_timestamp=now,
         source=random.choice(SOURCES),
         customer=Customer(
             customer_id=context.customer_id
@@ -249,7 +267,8 @@ def generate_event() -> ShopStreamEvent:
 # Customer journey generation
 # ---------------------------------------------------------------------------
 
-# generate a realistic journey because not every customer will complete the journey of customer_created -> product_viewed -> cart_added -> order_created -> payment_completed 
+# # Generate a realistic customer journey with optional cart,
+# order, payment, and cancellation events. 
 def generate_journey() -> list[ShopStreamEvent]:
     """
     Generate a realistic customer journey.

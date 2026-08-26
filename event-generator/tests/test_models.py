@@ -6,12 +6,17 @@ from src.shopstream.models import (
     ShopStreamEvent,
 )
 
+
 def test_valid_order_event():
+
+    event_timestamp = datetime.now(timezone.utc) 
+
     event = ShopStreamEvent(
         event_id="evt_123",
         event_type="order_created",
         event_version=1,
-        event_timestamp=datetime.now(timezone.utc),
+        event_timestamp=event_timestamp,
+        ingestion_timestamp=event_timestamp,
         source="web",
         customer=Customer(
             customer_id="cust_123"

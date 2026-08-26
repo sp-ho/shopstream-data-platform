@@ -29,6 +29,7 @@ class ShopStreamEvent(BaseModel):
     event_type: EventType
     event_version: int = 1
     event_timestamp: datetime
+    ingestion_timestamp: datetime
     source: str
     customer: Customer
     order: Order | None = None

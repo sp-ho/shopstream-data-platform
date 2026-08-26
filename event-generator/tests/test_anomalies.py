@@ -1,4 +1,6 @@
 import pytest
+from datetime import timedelta
+import src.shopstream.anomalies as anomalies
 
 from src.shopstream.anomalies import (
     AnomalyConfig,
@@ -7,9 +9,12 @@ from src.shopstream.anomalies import (
     make_invalid_order_amount,
     make_invalid_customer_id,
     make_invalid_event,
+    make_late_event,
+    reorder_events
 )
 from src.shopstream.generator import (
     generate_event,
+    generate_journey,
     generate_order_created_event,
     generate_product_viewed_event,
 )
@@ -175,3 +180,309 @@ def test_anomaly_simulator_does_not_invalidate_when_rate_is_zero():
     assert len(events) == 1
     assert events[0].order is not None
     assert events[0].order.total_amount >= 0
+
+def test_make_late_event_shifts_event_timestamp():
+    event = generate_event()
+
+    original_event_timestamp = event.event_timestamp
+    original_ingestion_timestamp = event.ingestion_timestamp
+
+    late_event = make_late_event(
+        event,
+        delay_seconds=30,
+    )
+
+    assert late_event.event_timestamp == (
+        original_event_timestamp - timedelta(seconds=30)
+    )
+
+    assert late_event.ingestion_timestamp == (
+        original_ingestion_timestamp
+    )
+
+def test_make_late_event_does_not_modify_original():
+    event = generate_event()
+
+    original_event_timestamp = event.event_timestamp
+
+    late_event = make_late_event(
+        event,
+        delay_seconds=30,
+    )
+
+    assert event.event_timestamp == original_event_timestamp
+    assert late_event.event_timestamp < event.event_timestamp
+
+def test_make_late_event_requires_positive_delay():
+    event = generate_event()
+
+    with pytest.raises(ValueError):
+        make_late_event(event, delay_seconds=0)
+
+    with pytest.raises(ValueError):
+        make_late_event(event, delay_seconds=-10)
+
+def test_anomaly_config_accepts_valid_late_settings():
+    config = AnomalyConfig(
+        late_rate=0.05,
+        late_delay_seconds=60,
+    )
+
+    assert config.late_rate == 0.05
+    assert config.late_delay_seconds == 60
+
+def test_anomaly_config_rejects_invalid_late_rate():
+    with pytest.raises(ValueError):
+        AnomalyConfig(late_rate=1.5)
+
+def test_anomaly_config_rejects_invalid_late_delay():
+    with pytest.raises(ValueError):
+        AnomalyConfig(late_delay_seconds=0)
+
+def test_anomaly_simulator_always_makes_event_late_when_rate_is_one():
+    event = generate_event()
+
+    simulator = AnomalySimulator(
+        AnomalyConfig(
+            late_rate=1.0,
+            late_delay_seconds=60,
+        )
+    )
+
+    events = simulator.process(event)
+
+    assert len(events) == 1
+    assert events[0].event_timestamp == (
+        event.event_timestamp - timedelta(seconds=60)
+    )
+    assert events[0].ingestion_timestamp == (
+        event.ingestion_timestamp
+    )
+
+def test_anomaly_simulator_does_not_make_event_late_when_rate_is_zero():
+    event = generate_event()
+
+    simulator = AnomalySimulator(
+        AnomalyConfig(
+            late_rate=0.0,
+            late_delay_seconds=60,
+        )
+    )
+
+    events = simulator.process(event)
+
+    assert len(events) == 1
+    assert events[0].event_timestamp == event.event_timestamp
+
+def test_reorder_events_preserves_events():
+    events = [
+        generate_event(),
+        generate_event(),
+        generate_event(),
+        generate_event(),
+    ]
+
+    original_ids = [
+        event.event_id
+        for event in events
+    ]
+
+    reordered = reorder_events(events)
+
+    assert sorted(
+        event.event_id for event in reordered
+    ) == sorted(original_ids)
+
+def test_reorder_events_preserves_event_data():
+    events = [
+        generate_event(),
+        generate_event(),
+        generate_event(),
+        generate_event(),
+    ]
+
+    original_data = {
+        event.event_id: (
+            event.event_timestamp,
+            event.ingestion_timestamp,
+        )
+        for event in events
+    }
+
+    reordered = reorder_events(events)
+
+    for event in reordered:
+        original_event_timestamp, original_ingestion_timestamp = (
+            original_data[event.event_id]
+        )
+
+        assert event.event_timestamp == original_event_timestamp
+        assert event.ingestion_timestamp == original_ingestion_timestamp
+
+def test_reorder_events_does_not_modify_original():
+    events = [
+        generate_event(),
+        generate_event(),
+        generate_event(),
+        generate_event(),
+    ]
+
+    original_ids = [
+        event.event_id
+        for event in events
+    ]
+
+    reorder_events(events)
+
+    assert [
+        event.event_id
+        for event in events
+    ] == original_ids
+
+def test_reorder_events_returns_copy_for_short_sequence():
+    events = [generate_event(), generate_event()]
+
+    reordered = reorder_events(events)
+
+    assert reordered == events
+    assert reordered is not events
+
+def test_reorder_events_creates_out_of_order_sequence(monkeypatch):
+    events = [
+        generate_event(),
+        generate_event(),
+        generate_event(),
+        generate_event(),
+    ]
+
+    # Force the function to select index 1.
+    monkeypatch.setattr(
+        anomalies.random,
+        "randint",
+        lambda _start, _end: 1,
+    )
+
+    original_ids = [
+        event.event_id
+        for event in events
+    ]
+
+    reordered = reorder_events(events)
+
+    reordered_ids = [
+        event.event_id
+        for event in reordered
+    ]
+
+    assert reordered_ids == [
+        original_ids[0],
+        original_ids[2],
+        original_ids[1],
+        original_ids[3],
+    ]
+
+def test_reorder_events_creates_event_time_disorder(monkeypatch):
+    events = [
+        generate_event(),
+        generate_event(),
+        generate_event(),
+        generate_event(),
+    ]
+
+    base_time = events[0].event_timestamp
+
+    for index, event in enumerate(events):
+        event.event_timestamp = base_time + timedelta(
+            seconds=index
+        )
+
+    monkeypatch.setattr(
+        anomalies.random,
+        "randint",
+        lambda _start, _end: 1,
+    )
+
+    reordered = reorder_events(events)
+
+    timestamps = [
+        event.event_timestamp
+        for event in reordered
+    ]
+
+    assert timestamps == [
+        base_time,
+        base_time + timedelta(seconds=2),
+        base_time + timedelta(seconds=1),
+        base_time + timedelta(seconds=3),
+    ]
+
+def test_anomaly_simulator_always_reorders_when_rate_is_one(
+    monkeypatch,
+):
+    events = [
+        generate_event(),
+        generate_event(),
+        generate_event(),
+        generate_event(),
+    ]
+
+    original_ids = [
+        event.event_id
+        for event in events
+    ]
+
+    monkeypatch.setattr(
+        anomalies.random,
+        "randint",
+        lambda _start, _end: 1,
+    )
+
+    simulator = AnomalySimulator(
+        AnomalyConfig(
+            out_of_order_rate=1.0,
+        )
+    )
+
+    reordered = simulator.process_events(events)
+
+    reordered_ids = [
+        event.event_id
+        for event in reordered
+    ]
+
+    assert reordered_ids == [
+        original_ids[0],
+        original_ids[2],
+        original_ids[1],
+        original_ids[3],
+    ]
+
+def test_anomaly_simulator_does_not_reorder_when_rate_is_zero():
+    events = [
+        generate_event(),
+        generate_event(),
+        generate_event(),
+        generate_event(),
+    ]
+
+    original_ids = [
+        event.event_id
+        for event in events
+    ]
+
+    simulator = AnomalySimulator(
+        AnomalyConfig(
+            out_of_order_rate=0.0,
+        )
+    )
+
+    result = simulator.process_events(events)
+
+    assert [
+        event.event_id
+        for event in result
+    ] == original_ids
+
+def test_anomaly_config_rejects_invalid_out_of_order_rate():
+    with pytest.raises(ValueError):
+        AnomalyConfig(out_of_order_rate=1.5)

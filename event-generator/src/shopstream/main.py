@@ -1,13 +1,9 @@
 import argparse
-from html import parser
 import json
-from random import random
 import time
 
-from .generator import generate_event
+from .generator import generate_event, generate_journey
 from .anomalies import AnomalyConfig, AnomalySimulator
-# from .models import ShopStreamEvent
-
 
 def wait_until(target_time: float) -> None:
     """
@@ -56,11 +52,51 @@ def main() -> None:
         help="Probability of generating an invalid event (0.0 to 1.0).",
     )
 
+    parser.add_argument(
+        "--late-rate",
+        type=float,
+        default=0.0,
+        help="Probability of generating a late event (0.0 to 1.0).",
+    )
+
+    parser.add_argument(
+        "--late-delay-seconds",
+        type=float,
+        default=30.0,
+        help="How many seconds a late event should be shifted into the past.",
+    )
+
+    parser.add_argument(
+        "--journeys",
+        type=int,
+        default=0,
+        help="Number of customer journeys to generate.",
+    )
+
+    parser.add_argument(
+        "--out-of-order-rate",
+        type=float,
+        default=0.0,
+        help="Probability of reordering events within a journey.",
+    )
+
     args = parser.parse_args()
 
-    # validation
-    if args.events is None and args.duration is None:
-        parser.error("Specify either --events or --duration.")
+    # -----------------------------------------------------------------------
+    # Validation
+    # -----------------------------------------------------------------------
+
+    if (
+        args.events is None
+        and args.duration is None
+        and args.journeys == 0
+    ):
+        parser.error("Specify --events, --duration, or --journeys.")
+
+    if args.journeys > 0 and (
+        args.events is not None or args.duration is not None
+    ):
+        parser.error("--journeys cannot be combined with --events or --duration.")
 
     if args.events is not None and args.duration is not None:
         parser.error("Specify either --events or --duration, not both.")
@@ -71,6 +107,9 @@ def main() -> None:
     if args.duration is not None and args.duration <= 0:
         parser.error("--duration must be greater than 0.")
 
+    if args.journeys < 0:
+        parser.error("--journeys must be non-negative.")
+
     if args.events_per_second <= 0:
         parser.error("--events-per-second must be greater than 0.")
 
@@ -80,14 +119,52 @@ def main() -> None:
     if not 0.0 <= args.invalid_rate <= 1.0:
         parser.error("--invalid-rate must be between 0.0 and 1.0.")
 
+    if not 0.0 <= args.late_rate <= 1.0:
+        parser.error("--late-rate must be between 0.0 and 1.0.")
+
+    if args.late_delay_seconds <= 0:
+        parser.error("--late-delay-seconds must be greater than 0.")
+
+    if not 0.0 <= args.out_of_order_rate <= 1.0:
+        parser.error("--out-of-order-rate must be between 0.0 and 1.0.")
+
+    # -----------------------------------------------------------------------
+    # Anomaly simulator
+    # -----------------------------------------------------------------------
+
     anomaly_simulator = AnomalySimulator(
     AnomalyConfig(
             duplicate_rate=args.duplicate_rate,
             invalid_rate=args.invalid_rate,
+            late_rate=args.late_rate,
+            late_delay_seconds=args.late_delay_seconds,
+            out_of_order_rate=args.out_of_order_rate,
         )
     )
 
-    # calculate the delay
+    # -----------------------------------------------------------------------
+    # Journey mode
+    # -----------------------------------------------------------------------
+
+    if args.journeys > 0:
+        for _ in range(args.journeys):
+            journey = generate_journey()
+
+            journey = anomaly_simulator.process_events(journey)
+
+            for event in journey:
+                print(
+                    json.dumps(
+                        event.model_dump(mode="json"),
+                        separators=(",", ":"),
+                    )
+                )
+        return
+
+    # -----------------------------------------------------------------------
+    # Individual event mode
+    # -----------------------------------------------------------------------
+
     interval = 1.0 / args.events_per_second
 
     if args.events is not None:
@@ -106,7 +183,7 @@ def main() -> None:
                     )
                 )
 
-        next_event_time += interval
+            next_event_time += interval
 
     else:
         start_time = time.monotonic()
@@ -126,7 +203,7 @@ def main() -> None:
                     )
                 )
 
-            next_event_time += interval
+            next_event_time += interval 
 
 if __name__ == "__main__":
     main()
