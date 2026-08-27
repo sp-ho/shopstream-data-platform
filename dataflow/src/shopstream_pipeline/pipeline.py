@@ -6,6 +6,7 @@ from apache_beam import pvalue
 from apache_beam.io.gcp.pubsub import ReadFromPubSub
 from apache_beam.options.pipeline_options import PipelineOptions
 from shopstream_common.models import ShopStreamEvent
+from google.cloud import pubsub_v1
 
 
 def parse_event(message: bytes) -> ShopStreamEvent:
@@ -24,6 +25,33 @@ class ParseEventDoFn(beam.DoFn):
                 self.INVALID_TAG,
                 message,
             )
+
+class PublishInvalidEventDoFn(beam.DoFn):
+    def __init__(self, project_id: str, topic_id: str):
+        self.project_id = project_id
+        self.topic_id = topic_id
+        self.publisher = None
+        self.topic_path = None
+
+    def setup(self):
+        self.publisher = pubsub_v1.PublisherClient()
+        self.topic_path = self.publisher.topic_path(
+            self.project_id,
+            self.topic_id,
+        )
+
+    def process(self, message: bytes):
+        future = self.publisher.publish(
+            self.topic_path,
+            message,
+        )
+
+        message_id = future.result()
+
+        print(
+            f"Published invalid event to DLQ: "
+            f"message_id={message_id}"
+        )
 
 def log_valid_event(event: ShopStreamEvent) -> None:
     print(
@@ -57,6 +85,11 @@ def run() -> None:
     parser.add_argument(
         "--subscription",
         help="Pub/Sub subscription name. Required for Pub/Sub input.",
+    )
+
+    parser.add_argument(
+        "--dead-letter-topic",
+        help="Pub/Sub topic for invalid events.",
     )
 
     args, pipeline_args = parser.parse_known_args()
@@ -130,6 +163,11 @@ def run() -> None:
                     "--subscription is required when --input=pubsub."
                 )
 
+            if not args.dead_letter_topic:
+                parser.error(
+                    "--dead-letter-topic is required when --input=pubsub."
+                )
+
             subscription_path = (
                 f"projects/{args.project}/subscriptions/"
                 f"{args.subscription}"
@@ -150,8 +188,12 @@ def run() -> None:
             invalid_events = parsed[ParseEventDoFn.INVALID_TAG]
 
             valid_events | "LogValidEvents" >> beam.Map(log_valid_event)
-            invalid_events | "LogInvalidEvents" >> beam.Map(log_invalid_event)
-
+            invalid_events | "PublishInvalidEvents" >> beam.ParDo(
+                PublishInvalidEventDoFn(
+                    project_id=args.project,
+                    topic_id=args.dead_letter_topic,
+                )
+            )
 
 if __name__ == "__main__":
     run()
