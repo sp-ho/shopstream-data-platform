@@ -83,6 +83,12 @@ def run() -> None:
     )
 
     parser.add_argument(
+        "--region",
+        default="northamerica-northeast1",
+        help="Google Cloud region for Dataflow.",
+    )
+
+    parser.add_argument(
         "--subscription",
         help="Pub/Sub subscription name. Required for Pub/Sub input.",
     )
@@ -94,7 +100,11 @@ def run() -> None:
 
     args, pipeline_args = parser.parse_known_args()
 
-    pipeline_options = PipelineOptions(pipeline_args)
+    pipeline_options = PipelineOptions(
+        pipeline_args,
+        project=args.project,
+        region=args.region,
+    )
 
     with beam.Pipeline(options=pipeline_options) as pipeline:
 
